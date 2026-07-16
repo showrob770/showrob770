@@ -225,7 +225,22 @@
       if (view === 'salary') container.innerHTML = viewSalary();
       if (view === 'reports') container.innerHTML = viewReports();
       const links = document.querySelectorAll('.sidebar .nav-link');
-      links[Object.keys(map).indexOf(view)].classList.add('active');
+      const idx = Object.keys(map).indexOf(view);
+      if (links[idx]) links[idx].classList.add('active');
+
+      if (view === 'dashboard' && state.user.role === 'admin') {
+        const ctx = document.getElementById('attendanceChart');
+        if (ctx) {
+          if (window.myChart) window.myChart.destroy();
+          window.myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: ['Jan','Feb','Mar','Apr','May','Jun','Jul'],
+              datasets: [{ label: 'Attendance', data: [20, 25, 22, 28, 26, state.employees.length, state.employees.length], borderColor: '#4f46e5', backgroundColor: 'rgba(79, 70, 229, 0.2)', fill: true, tension: 0.4 }]
+            }
+          });
+        }
+      }
     }
 
     function statCard(title, value, icon, color) {
@@ -299,4 +314,139 @@ $$
         document.getElementById('empSalary').value = e.salary; document.getElementById('empJoin').value = e.joiningDate;
         document.getElementById('empStatus').value = e.status; document.getElementById('empPhoto').value = e.photo;
       } else {
-        document.getEleme
+        document.getElementById('empModalTitle').innerText = 'Add Employee'; document.getElementById('empForm').reset();
+        document.getElementById('empEid').value = 'EMP' + Math.floor(Math.random()*10000);
+      }
+      m.show();
+    }
+
+    async function saveEmployee() {
+      const id = document.getElementById('empId').value;
+      const data = {
+        id: document.getElementById('empEid').value, name: document.getElementById('empName').value,
+        department: document.getElementById('empDept').value, trade: document.getElementById('empTrade').value,
+        nationality: document.getElementById('empNat').value, emiratesId: document.getElementById('empEmirates').value,
+        passport: document.getElementById('empPass').value, phone: document.getElementById('empPhone').value,
+        email: document.getElementById('empEmail').value, salary: parseFloat(document.getElementById('empSalary').value),
+        joiningDate: document.getElementById('empJoin').value, status: document.getElementById('empStatus').value,
+        photo: document.getElementById('empPhoto').value
+      };
+      showLoading();
+      if (id) await api.put('/api/employees/' + id, data); else await api.post('/api/employees', data);
+      const d = await api.getState(); state.employees = d.employees; state.attendance = d.attendance; state.salaries = d.salaries;
+      hideLoading(); bootstrap.Modal.getInstance(document.getElementById('empModal')).hide(); showToast('Saved!'); navigate('employees');
+    }
+
+    async function delEmp(id) {
+      if (!confirm('Delete employee?')) return;
+      showLoading(); await api.del('/api/employees/' + id);
+      const d = await api.getState(); state.employees = d.employees; hideLoading(); navigate('employees'); showToast('Deleted!');
+    }
+
+    function viewTimesheet() {
+      const isEmp = state.user.role === 'employee';
+      return `${isEmp ? `<div class="text-center mb-3"><button class="btn btn-success me-2" onclick="checkIn()">Check In</button><button class="btn btn-warning" onclick="checkOut()">Check Out</button></div>` : ''}
+      <div class="glass-panel p-3 table-responsive"><table class="table table-hover">
+        <thead><tr><th>Emp ID</th><th>Name</th><th>Dept</th><th>Date</th><th>Check In</th><th>Check Out</th><th>Break</th><th>Work Hrs</th><th>OT</th><th>Status</th><th>Remarks</th></tr></thead>
+        <tbody>${state.attendance.map(a => `<tr>
+          <td>${a.employeeId}</td><td>${a.employeeName}</td><td>${a.department}</td><td>${a.date}</td>
+          <td>${a.checkIn}</td><td>${a.checkOut}</td><td>${a.breakTime}h</td><td>${a.workingHours}</td><td>${a.overtime}</td>
+          <td><span class="badge bg-info badge-custom">${a.status}</span></td><td>${a.remarks}</td></tr>`).join('')}</tbody>
+      </table></div>`;
+    }
+
+    async function checkIn() { showLoading(); await api.post('/api/attendance/checkin'); const d = await api.getState(); Object.assign(state, d); hideLoading(); navigate('timesheet'); }
+    async function checkOut() { showLoading(); await api.post('/api/attendance/checkout'); const d = await api.getState(); Object.assign(state, d); hideLoading(); navigate('timesheet'); }
+
+    function viewSalary() {
+      const isAdmin = state.user.role === 'admin';
+      return `${isAdmin ? `<div class="mb-3"><button class="btn btn-primary" onclick="genPayroll()"><i class="bi bi-generate"></i> Generate Monthly Payroll</button></div>` : ''}
+      <div class="glass-panel p-3 table-responsive"><table class="table table-hover">
+        <thead><tr><th>Emp ID</th><th>Name</th><th>Basic</th><th>Allow</th><th>OT</th><th>Deduct</th><th>Net</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody>${state.salaries.map(s => `<tr>
+          <td>${s.employeeId}</td><td>${s.employeeName}</td><td>
+$$
+{s.basic}</td><td>$${s.allowance}</td><td>$${s.overtime}</td><td>
+$$
+{s.deductions}</td>
+          <td class="fw-bold">
+$$
+{s.net}</td><td><span class="badge bg-${s.status==='Paid'?'success':'warning'} badge-custom">${s.status}</span></td>
+          <td>${isAdmin && s.status==='Pending' ? `<button class="btn btn-sm btn-success" onclick="openPay('${s.id}')">Pay</button>` : `<button class="btn btn-sm btn-info" onclick="genSlip('${s.id}')">Slip</button>`}</td></tr>`).join('')}</tbody>
+      </table></div>`;
+    }
+
+    async function genPayroll() { showLoading(); await api.post('/api/salaries/generate'); const d = await api.getState(); Object.assign(state, d); hideLoading(); navigate('salary'); showToast('Payroll Generated!'); }
+
+    function openPay(id) {
+      document.getElementById('paySalId').value = id; document.getElementById('payDate').value = new Date().toISOString().split('T')[0];
+      new bootstrap.Modal(document.getElementById('payModal')).show();
+    }
+    async function processPayment() {
+      const id = document.getElementById('paySalId').value;
+      showLoading(); await api.post('/api/salaries/pay/' + id, { method: document.getElementById('payMethod').value, transactionId: document.getElementById('payTxn').value, date: document.getElementById('payDate').value });
+      const d = await api.getState(); Object.assign(state, d); hideLoading(); bootstrap.Modal.getInstance(document.getElementById('payModal')).hide(); navigate('salary'); showToast('Payment Processed!');
+    }
+    function genSlip(id) {
+      const s = state.salaries.find(x => x.id === id); const { jsPDF } = window.jspdf; const doc = new jsPDF();
+      doc.setFontSize(18); doc.text("EMS Salary Slip", 14, 20); doc.setFontSize(12);
+      doc.text(`Employee: ${s.employeeName} (${s.employeeId})`, 14, 35); doc.text(`Month/Year: ${s.month+1}/${s.year}`, 14, 45);
+      doc.text(`Basic: $${s.basic} | Allow: $${s.allowance} | OT: 
+$$
+{s.overtime}`, 14, 55);
+      doc.text(`Deductions: 
+$$
+{s.deductions} | Net: 
+$$
+{s.net}`, 14, 65); doc.text(`Status: ${s.status}`, 14, 75);
+      if(s.status==='Paid') doc.text(`Method: ${s.paymentMethod} | Txn: ${s.transactionId}`, 14, 85);
+      doc.save(`Slip_${s.employeeId}.pdf`);
+    }
+
+    function viewReports() {
+      return `<div class="d-flex justify-content-between mb-3 flex-wrap gap-2">
+        <h4 class="fw-bold">System Reports</h4>
+        <div><button class="btn btn-danger me-2" onclick="expPDF()"><i class="bi bi-file-pdf"></i> Export PDF</button>
+        <button class="btn btn-success" onclick="expExcel()"><i class="bi bi-file-excel"></i> Export Excel</button></div>
+      </div>
+      <div class="glass-panel p-3 table-responsive mb-3">
+        <h6>Employees</h6><table id="repEmp" class="table table-striped"><thead><tr><th>ID</th><th>Name</th><th>Dept</th><th>Salary</th><th>Status</th></tr></thead>
+        <tbody>${state.employees.map(e=>`<tr><td>${e.id}</td><td>${e.name}</td><td>${e.department}</td><td>
+$$
+{e.salary}</td><td>${e.status}</td></tr>`).join('')}</tbody></table>
+      </div>
+      <div class="glass-panel p-3 table-responsive mb-3">
+        <h6>Attendance</h6><table id="repAtt" class="table table-striped"><thead><tr><th>Emp</th><th>Date</th><th>Status</th><th>Work Hrs</th></tr></thead>
+        <tbody>${state.attendance.map(a=>`<tr><td>${a.employeeName}</td><td>${a.date}</td><td>${a.status}</td><td>${a.workingHours}</td></tr>`).join('')}</tbody></table>
+      </div>
+      <div class="glass-panel p-3 table-responsive">
+        <h6>Salaries</h6><table id="repSal" class="table table-striped"><thead><tr><th>Emp</th><th>Basic</th><th>Net</th><th>Status</th></tr></thead>
+        <tbody>${state.salaries.map(s=>`<tr><td>${s.employeeName}</td><td>$${s.basic}</td><td>$${s.net}</td><td>${s.status}</td></tr>`).join('')}</tbody></table>
+      </div>`;
+    }
+
+    function expPDF() {
+      const { jsPDF } = window.jspdf; const doc = new jsPDF();
+      doc.text("EMS Enterprise Reports", 14, 16);
+      doc.autoTable({ html: '#repEmp', startY: 20, headStyles: {fillColor: [79, 70, 229]} });
+      doc.autoTable({ html: '#repAtt', startY: doc.lastAutoTable.finalY + 10, headStyles: {fillColor: [79, 70, 229]} });
+      doc.autoTable({ html: '#repSal', startY: doc.lastAutoTable.finalY + 10, headStyles: {fillColor: [79, 70, 229]} });
+      doc.save('EMS_Reports.pdf');
+    }
+    function expExcel() {
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('repEmp')), "Employees");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('repAtt')), "Attendance");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.table_to_sheet(document.getElementById('repSal')), "Salaries");
+      XLSX.writeFile(wb, 'EMS_Reports.xlsx');
+    }
+
+    function filterTable(inputId, tbodyId) {
+      const q = document.getElementById(inputId).value.toLowerCase();
+      document.querySelectorAll(`#${tbodyId} tr`).forEach(r => r.style.display = r.innerText.toLowerCase().includes(q) ? '' : 'none');
+    }
+
+    window.onload = init;
+  </script>
+</body>
+</html>
