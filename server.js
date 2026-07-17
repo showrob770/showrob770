@@ -1,8 +1,3 @@
-/**
- * Devloper By Showrob 
- * Server File (server.js)
- * Handles Authentication, API Routes, and EJS Rendering
- */
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
@@ -73,7 +68,7 @@ const isAdmin = (req, res, next) => {
 
 // Routes
 app.get('/', (req, res) => {
-  res.render('index.ejs', { user: req.session.user || null });
+  res.render('index', { user: req.session.user || null });
 });
 
 // Login
