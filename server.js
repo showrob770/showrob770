@@ -1,20 +1,29 @@
+/**
+ * Devloper By Showrob 
+ * Server File (server.js)
+ * Handles Authentication, API Routes, and EJS Rendering
+ */
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 
 const app = express();
+
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Session Configuration (Security)
 app.use(session({
-  secret: 'ems_enterprise_secret_2023',
+  secret: 'ems_enterprise_secret_key_2023',
   resave: false,
   saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000 }
+  cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
 }));
-app.set('view engine', 'ejs');
-const path = require("path");
 
-app.set("views", path.resolve(__dirname, "views"));
+// View Engine
+app.set('view engine', 'ejs');
+app.set('views', __dirname);
 
 // In-Memory Database
 const db = { users: [], employees: [], attendance: [], salaries: [] };
@@ -25,10 +34,10 @@ db.users.push({
   username: 'admin',
   password: bcrypt.hashSync('admin123', 10),
   role: 'admin',
-  name: 'System Admin'
+  name: 'System Administrator'
 });
 
-// Seed Employees & Employee Users
+// Seed Employees
 const seedEmployees = [
   { id: 'EMP001', name: 'Ahmed Khan', emiratesId: '784-1990-1234567-1', passport: 'A1234567', nationality: 'Pakistani', department: 'IT', trade: 'Developer', salary: 5000, phone: '+971500000001', email: 'ahmed@ems.com', joiningDate: '2023-01-15', status: 'Active', photo: 'https://i.pravatar.cc/150?img=1' },
   { id: 'EMP002', name: 'Jane Smith', emiratesId: '784-1991-1234567-2', passport: 'B1234567', nationality: 'British', department: 'HR', trade: 'Manager', salary: 6000, phone: '+971500000002', email: 'jane@ems.com', joiningDate: '2022-05-15', status: 'Active', photo: 'https://i.pravatar.cc/150?img=2' },
@@ -37,13 +46,7 @@ const seedEmployees = [
 
 seedEmployees.forEach(emp => {
   db.employees.push(emp);
-  db.users.push({
-    id: emp.id,
-    username: emp.id,
-    password: bcrypt.hashSync('emp123', 10),
-    role: 'employee',
-    name: emp.name
-  });
+  db.users.push({ id: emp.id, username: emp.id, password: bcrypt.hashSync('emp123', 10), role: 'employee', name: emp.name });
 });
 
 // Seed Attendance (Today)
@@ -53,47 +56,47 @@ db.attendance.push({ id: 'ATT002', employeeId: 'EMP002', employeeName: 'Jane Smi
 db.attendance.push({ id: 'ATT003', employeeId: 'EMP003', employeeName: 'Li Wei', department: 'Finance', date: today, checkIn: '-', checkOut: '-', breakTime: 0, workingHours: 0, overtime: 0, status: 'Absent', remarks: 'Sick Leave' });
 
 // Seed Salaries
-db.salaries.push({ id: 'SAL001', employeeId: 'EMP001', employeeName: 'Ahmed Khan', month: new Date().getMonth(), year: new Date().getFullYear(), basic: 5000, allowance: 500, overtime: 0, bonus: 0, commission: 0, deductions: 0, advance: 0, penalty: 0, loan: 0, net: 5500, status: 'Paid', paymentMethod: 'Bank', transactionId: 'TXN001', paymentDate: today });
-db.salaries.push({ id: 'SAL002', employeeId: 'EMP002', employeeName: 'Jane Smith', month: new Date().getMonth(), year: new Date().getFullYear(), basic: 6000, allowance: 600, overtime: 0, bonus: 0, commission: 0, deductions: 0, advance: 0, penalty: 0, loan: 0, net: 6600, status: 'Pending', paymentMethod: '', transactionId: '', paymentDate: '' });
+const currentMonth = new Date().getMonth();
+const currentYear = new Date().getFullYear();
+db.salaries.push({ id: 'SAL001', employeeId: 'EMP001', employeeName: 'Ahmed Khan', month: currentMonth, year: currentYear, basic: 5000, allowance: 500, overtime: 0, bonus: 0, commission: 0, deductions: 0, advance: 0, penalty: 0, loan: 0, net: 5500, status: 'Paid', paymentMethod: 'Bank', transactionId: 'TXN001', reference: 'REF001', paymentDate: today });
+db.salaries.push({ id: 'SAL002', employeeId: 'EMP002', employeeName: 'Jane Smith', month: currentMonth, year: currentYear, basic: 6000, allowance: 600, overtime: 0, bonus: 0, commission: 0, deductions: 0, advance: 0, penalty: 0, loan: 0, net: 6600, status: 'Pending', paymentMethod: '', transactionId: '', reference: '', paymentDate: '' });
 
-// Middleware
+// Auth Middleware
 const isAuthenticated = (req, res, next) => {
-  if (req.session.user) next();
-  else res.status(401).json({ error: 'Unauthorized' });
+  if (req.session.user) return next();
+  res.status(401).json({ error: 'Unauthorized' });
 };
 const isAdmin = (req, res, next) => {
-  if (req.session.user && req.session.user.role === 'admin') next();
-  else res.status(403).json({ error: 'Forbidden' });
+  if (req.session.user && req.session.user.role === 'admin') return next();
+  res.status(403).json({ error: 'Forbidden' });
 };
 
 // Routes
 app.get('/', (req, res) => {
-  res.render('index', { user: req.session.user || null });
+  res.render('index.ejs', { user: req.session.user || null });
 });
 
-// Auth API
+// Login
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   const user = db.users.find(u => u.username === username);
   if (user && bcrypt.compareSync(password, user.password)) {
     req.session.user = { id: user.id, username: user.username, role: user.role, name: user.name };
-    res.json({ success: true, user: req.session.user });
-  } else {
-    res.status(401).json({ success: false, message: 'Invalid credentials' });
+    return res.json({ success: true, user: req.session.user });
   }
+  res.status(401).json({ success: false, message: 'Invalid credentials' });
 });
 
+// Logout
 app.post('/api/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ success: true });
+  req.session.destroy(() => res.json({ success: true }));
 });
 
+// Get State
 app.get('/api/state', isAuthenticated, (req, res) => {
   const userId = req.session.user.id;
   const role = req.session.user.role;
-  let employees = db.employees;
-  let attendance = db.attendance;
-  let salaries = db.salaries;
+  let employees = db.employees, attendance = db.attendance, salaries = db.salaries;
   if (role === 'employee') {
     employees = db.employees.filter(e => e.id === userId);
     attendance = db.attendance.filter(a => a.employeeId === userId);
@@ -114,8 +117,8 @@ app.post('/api/employees', isAdmin, (req, res) => {
 
 app.put('/api/employees/:id', isAdmin, (req, res) => {
   const emp = db.employees.find(e => e.id === req.params.id);
-  if (emp) Object.assign(emp, req.body);
-  res.json({ success: true });
+  if (emp) { Object.assign(emp, req.body); res.json({ success: true }); }
+  else res.status(404).json({ error: 'Not found' });
 });
 
 app.delete('/api/employees/:id', isAdmin, (req, res) => {
@@ -124,7 +127,7 @@ app.delete('/api/employees/:id', isAdmin, (req, res) => {
   res.json({ success: true });
 });
 
-// Attendance API
+// Attendance
 app.post('/api/attendance/checkin', isAuthenticated, (req, res) => {
   const userId = req.session.user.id;
   const empId = req.session.user.role === 'admin' && req.body.employeeId ? req.body.employeeId : userId;
@@ -137,14 +140,9 @@ app.post('/api/attendance/checkin', isAuthenticated, (req, res) => {
   const isLate = time > '09:00';
   
   if (record) {
-    record.checkIn = time;
-    record.status = isLate ? 'Late' : 'Present';
+    record.checkIn = time; record.status = isLate ? 'Late' : 'Present';
   } else {
-    db.attendance.push({
-      id: 'ATT' + Date.now(), employeeId: empId, employeeName: emp.name, department: emp.department,
-      date: dateStr, checkIn: time, checkOut: '-', breakTime: 1, workingHours: 0, overtime: 0,
-      status: isLate ? 'Late' : 'Present', remarks: ''
-    });
+    db.attendance.push({ id: 'ATT' + Date.now(), employeeId: empId, employeeName: emp.name, department: emp.department, date: dateStr, checkIn: time, checkOut: '-', breakTime: 1, workingHours: 0, overtime: 0, status: isLate ? 'Late' : 'Present', remarks: '' });
   }
   res.json({ success: true });
 });
@@ -161,33 +159,27 @@ app.post('/api/attendance/checkout', isAuthenticated, (req, res) => {
   record.checkOut = time;
   const [inH, inM] = record.checkIn.split(':').map(Number);
   const [outH, outM] = time.split(':').map(Number);
-  let diff = (outH * 60 + outM) - (inH * 60 + inM);
-  diff -= (record.breakTime || 1) * 60;
+  let diff = (outH * 60 + outM) - (inH * 60 + inM) - (record.breakTime * 60);
   record.workingHours = Math.max(0, parseFloat((diff / 60).toFixed(2)));
   record.overtime = record.workingHours > 8 ? parseFloat((record.workingHours - 8).toFixed(2)) : 0;
   if (record.workingHours < 4) record.status = 'Half Day';
   res.json({ success: true });
 });
 
-// Salary API
+// Salaries
 app.post('/api/salaries/generate', isAdmin, (req, res) => {
   const month = new Date().getMonth();
   const year = new Date().getFullYear();
-  db.salaries = db.salaries.filter(s => !(s.month === month && s.year === year));
+  db.salaries = db.salaries.filter(s => !(s.month === month && s.year === year && s.status === 'Pending'));
   db.employees.forEach(emp => {
     const empAtt = db.attendance.filter(a => a.employeeId === emp.id && new Date(a.date).getMonth() === month);
     const overtimeHrs = empAtt.reduce((sum, a) => sum + (a.overtime || 0), 0);
-    const basic = emp.salary;
-    const allowance = basic * 0.1;
+    const basic = parseFloat(emp.salary);
+    const allowance = parseFloat((basic * 0.1).toFixed(2));
     const overtimePay = parseFloat(((basic / 30 / 8) * overtimeHrs).toFixed(2));
     const deductions = 0;
     const net = parseFloat((basic + allowance + overtimePay - deductions).toFixed(2));
-    db.salaries.push({
-      id: 'SAL' + Date.now() + emp.id, employeeId: emp.id, employeeName: emp.name,
-      month, year, basic, allowance, overtime: overtimePay, bonus: 0, commission: 0, 
-      deductions, advance: 0, penalty: 0, loan: 0, net, status: 'Pending', 
-      paymentMethod: '', transactionId: '', paymentDate: ''
-    });
+    db.salaries.push({ id: 'SAL' + Date.now() + emp.id, employeeId: emp.id, employeeName: emp.name, month, year, basic, allowance, overtime: overtimePay, bonus: 0, commission: 0, deductions, advance: 0, penalty: 0, loan: 0, net, status: 'Pending', paymentMethod: '', transactionId: '', reference: '', paymentDate: '' });
   });
   res.json({ success: true });
 });
@@ -198,9 +190,11 @@ app.post('/api/salaries/pay/:id', isAdmin, (req, res) => {
   sal.status = 'Paid';
   sal.paymentMethod = req.body.method;
   sal.transactionId = req.body.transactionId;
+  sal.reference = req.body.reference;
   sal.paymentDate = req.body.date;
   res.json({ success: true });
 });
 
+// Start Server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`EMS Enterprise running on port ${PORT}`));
