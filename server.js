@@ -16,9 +16,11 @@ app.use(session({
   cookie: { secure: false, httpOnly: true, maxAge: 24 * 60 * 60 * 1000 }
 }));
 
+const path = require('path');
+
 // View Engine
 app.set('view engine', 'ejs');
-app.set('views', __dirname);
+app.set('views', path.join(__dirname, 'views'));
 
 // In-Memory Database
 const db = { users: [], employees: [], attendance: [], salaries: [] };
